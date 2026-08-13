@@ -1,0 +1,28 @@
+name: Refresh market data
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every 30 minutes during Tehran market hours, Sunday through Thursday (UTC).
+    - cron: "*/30 5-10 * * 0-4"
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - run: python scripts/refresh_market_data.py
+      - name: Commit refreshed snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/market_snapshot.json
+          git diff --cached --quiet || git commit -m "Refresh market data"
+          git push
