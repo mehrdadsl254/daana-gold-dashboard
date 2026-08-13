@@ -1,7 +1,20 @@
 
+import json
+from pathlib import Path
+
 import requests, pandas as pd, numpy as np, streamlit as st
 st.set_page_config(page_title="داشبورد سرمایه دانا V10",page_icon="🪙",layout="wide")
 H={"User-Agent":"Mozilla/5.0"}
+
+@st.cache_data(ttl=300)
+def snapshot():
+    try:
+        return json.loads((Path(__file__).parent / "data" / "market_snapshot.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+def saved(sym):
+    return snapshot().get("symbols",{}).get(sym,{})
 
 @st.cache_data(ttl=30)
 def search(s):
@@ -49,9 +62,16 @@ def tech(df):
     e12=x.close.ewm(span=12,adjust=False).mean();e26=x.close.ewm(span=26,adjust=False).mean();x["MACD"]=e12-e26;x["Signal"]=x.MACD.ewm(span=9,adjust=False).mean()
     return x
 def analyze(sym):
-    h=find(sym);i=h.get("insCode") if h else None
+    cached=saved(sym)
+    h=find(sym);i=h.get("insCode") if h else cached.get("insCode")
     if not i:return None
     df=hist(i)
+    used_snapshot=False
+    if df.empty and cached.get("history"):
+        df=pd.DataFrame(cached["history"])
+        for c in ["close","volume"]:df[c]=pd.to_numeric(df[c],errors="coerce")
+        df=df.dropna(subset=["close"]).sort_values("date").reset_index(drop=True)
+        used_snapshot=True
     if df.empty or len(df)<6:return None
     t=tech(df);z=t.iloc[-1];s=0;why=[]
     for ok,w,msg in [(z.close>z.EMA20,15,"قیمت بالای EMA20"),(z.EMA20>z.EMA50,15,"EMA20 بالای EMA50"),(z.EMA50>z.EMA200,15,"روند بلندمدت مثبت"),(z.RSI>=50,10,"RSI مثبت"),(z.MACD>z.Signal,15,"MACD مثبت")]:
@@ -59,6 +79,7 @@ def analyze(sym):
     av=t.volume.tail(20).mean()
     if av and t.volume.iloc[-1]>1.2*av:s+=10;why.append("حجم بالاتر از میانگین")
     ct=client(i)
+    if not isinstance(ct,dict):ct=cached.get("client")
     if isinstance(ct,dict):
         bi=num(ct,"buy_I_Volume");si=num(ct,"sell_I_Volume")
         if bi is not None and si is not None:
@@ -73,7 +94,7 @@ def analyze(sym):
     rr=(r1-cur)/(cur-stop) if cur>stop else np.nan
     ret=t.close.pct_change().dropna();daily=float(np.clip(.45*(z.EMA20/z.EMA50-1)/5+.35*(z.EMA50/z.EMA200-1)/10+.2*(z.close/t.close.iloc[-6]-1)/5,-.004,.004))
     exp=(1+daily)**30-1
-    return {"sym":sym,"score":max(0,min(100,s)),"why":why,"cur":cur,"support":s1,"resistance":r1,"entry":(entry_low,entry_high),"stop":stop,"rr":rr,"exp30":exp,"t":t}
+    return {"sym":sym,"score":max(0,min(100,s)),"why":why,"cur":cur,"support":s1,"resistance":r1,"entry":(entry_low,entry_high),"stop":stop,"rr":rr,"exp30":exp,"t":t,"snapshot":used_snapshot}
 
 def toman(x):return f"{x/10:,.0f}"
 capital=st.sidebar.number_input("سرمایه (تومان)",min_value=0.0,value=2300000000.0,step=10000000.0)
@@ -93,6 +114,9 @@ st.caption("یک صفحه برای تصمیم روزانه سرمایه")
 if not items:
     st.error("داده بازار دریافت نشد. اتصال اینترنت یا منبع عمومی داده را بررسی کنید.")
 else:
+    if any(x["snapshot"] for x in items):
+        stamp=snapshot().get("generated_at","نامشخص")
+        st.info(f"دادهٔ زندهٔ TSETMC در دسترس نبود؛ آخرین دادهٔ ذخیره‌شده ({stamp}) نمایش داده می‌شود.")
     best=max(items,key=lambda x:(x["net_adv"],x["score"]))
     # conservative final decision
     if best["score"]>=75 and np.isfinite(best["rr"]) and best["rr"]>=1.5 and best["net_adv"]>0 and best["exp30"]>0:
