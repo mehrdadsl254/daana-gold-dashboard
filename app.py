@@ -5,10 +5,13 @@ H={"User-Agent":"Mozilla/5.0"}
 
 @st.cache_data(ttl=30)
 def search(s):
-    r=requests.get(f"https://cdn.tsetmc.com/api/Instrument/GetInstrumentSearch/{requests.utils.quote(s)}",headers=H,timeout=10);r.raise_for_status()
-    d=r.json();x=d.get("instrumentSearch",d)
-    if isinstance(x,dict):x=x.get("instrumentSearch",x.get("items",[]))
-    return x if isinstance(x,list) else []
+    try:
+        r=requests.get(f"https://cdn.tsetmc.com/api/Instrument/GetInstrumentSearch/{requests.utils.quote(s)}",headers=H,timeout=10);r.raise_for_status()
+        d=r.json();x=d.get("instrumentSearch",d)
+        if isinstance(x,dict):x=x.get("instrumentSearch",x.get("items",[]))
+        return x if isinstance(x,list) else []
+    except requests.RequestException:
+        return []
 def find(s):
     a=search(s)
     for z in a:
@@ -16,10 +19,13 @@ def find(s):
     return a[0] if a else None
 @st.cache_data(ttl=15)
 def hist(i):
-    r=requests.get(f"https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceDailyList/{i}/365",headers=H,timeout=10);r.raise_for_status()
-    d=r.json();x=d.get("closingPriceDaily",d)
-    if isinstance(x,dict):x=x.get("closingPriceDaily",x.get("items",[]))
-    rows=[{"date":z.get("dEven"),"close":z.get("pClosing") or z.get("pc"),"volume":z.get("qTotTran5J") or 0} for z in (x if isinstance(x,list) else [])]
+    try:
+        r=requests.get(f"https://cdn.tsetmc.com/api/ClosingPrice/GetClosingPriceDailyList/{i}/365",headers=H,timeout=10);r.raise_for_status()
+        d=r.json();x=d.get("closingPriceDaily",d)
+        if isinstance(x,dict):x=x.get("closingPriceDaily",x.get("items",[]))
+        rows=[{"date":z.get("dEven"),"close":z.get("pClosing") or z.get("pc"),"volume":z.get("qTotTran5J") or 0} for z in (x if isinstance(x,list) else [])]
+    except requests.RequestException:
+        return pd.DataFrame()
     df=pd.DataFrame(rows)
     if df.empty:return df
     for c in ["close","volume"]:df[c]=pd.to_numeric(df[c],errors="coerce")
@@ -45,7 +51,9 @@ def tech(df):
 def analyze(sym):
     h=find(sym);i=h.get("insCode") if h else None
     if not i:return None
-    df=hist(i);t=tech(df);z=t.iloc[-1];s=0;why=[]
+    df=hist(i)
+    if df.empty or len(df)<6:return None
+    t=tech(df);z=t.iloc[-1];s=0;why=[]
     for ok,w,msg in [(z.close>z.EMA20,15,"قیمت بالای EMA20"),(z.EMA20>z.EMA50,15,"EMA20 بالای EMA50"),(z.EMA50>z.EMA200,15,"روند بلندمدت مثبت"),(z.RSI>=50,10,"RSI مثبت"),(z.MACD>z.Signal,15,"MACD مثبت")]:
         if ok:s+=w;why.append(msg)
     av=t.volume.tail(20).mean()
