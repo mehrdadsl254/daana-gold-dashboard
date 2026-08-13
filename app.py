@@ -112,7 +112,7 @@ st.title("🪙 داشبورد سرمایه دانا — نسخه ۱۰")
 st.caption("یک صفحه برای تصمیم روزانه سرمایه")
 
 if not items:
-    st.error("داده بازار دریافت نشد. اتصال اینترنت یا منبع عمومی داده را بررسی کنید.")
+    st.error("دادهٔ زندهٔ TSETMC از سرورهای Streamlit Cloud قابل دریافت نیست. برای نسخهٔ عمومی باید یک API دادهٔ جایگزین یا پراکسی سرور داخل ایران متصل شود.")
 else:
     if any(x["snapshot"] for x in items):
         stamp=snapshot().get("generated_at","نامشخص")
