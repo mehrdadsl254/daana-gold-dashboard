@@ -2,9 +2,6 @@ name: Refresh market data
 
 on:
   workflow_dispatch:
-  schedule:
-    # Every 30 minutes during Tehran market hours, Sunday through Thursday (UTC).
-    - cron: "*/30 5-10 * * 0-4"
 
 permissions:
   contents: write
